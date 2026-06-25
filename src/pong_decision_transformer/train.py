@@ -30,6 +30,13 @@ def train(env: str = "mujoco/halfcheetah/medium-v0", batch_size: int = 256, epoc
     ).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='min', 
+        factor=0.1, 
+        patience=100,
+        min_lr=1e-5
+    )
     criterion = nn.MSELoss() # Continuous action matching uses MSE
 
     print(f"Starting training on {env}...")
@@ -62,7 +69,9 @@ def train(env: str = "mujoco/halfcheetah/medium-v0", batch_size: int = 256, epoc
             total_loss += loss.item()
 
         avg_loss = total_loss / len(dataloader)
-        print(f"Epoch {epoch + 1}/{epochs} | Avg MSE Loss: {avg_loss:.4f}")
+        scheduler.step(avg_loss)
+        current_lr = optimizer.param_groups[0]['lr']
+        print(f"Epoch {epoch + 1}/{epochs} | Avg MSE Loss: {avg_loss:.4f} | LR: {current_lr:.2e}")
 
     # Save model weights alongside the dataset normalization statistics
     safe_env_name = env.replace("/", "_")
