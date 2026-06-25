@@ -1,4 +1,5 @@
 import argparse
+from accelerate import notebook_launcher
 from pong_decision_transformer.train import train
 
 def main():
@@ -10,13 +11,13 @@ def main():
     parser.add_argument("--context-length", type=int, default=40)
     args = parser.parse_args()
 
-    train(
+    notebook_launcher(train(
         env=args.env,
         batch_size=args.batch_size,
         epochs=args.epochs,
         lr=args.lr,
         context_length=args.context_length
-    )
+    ), num_processes=1)
 
 if __name__ == "__main__":
     main()

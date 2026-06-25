@@ -5,10 +5,12 @@ import minari
 
 from pong_decision_transformer.dataset import MinariDataset
 from pong_decision_transformer.model import MuJoCoDecisionTransformer
+from accelerate import Accelerator
 
 def train(env: str = "mujoco/halfcheetah/medium-v0", batch_size: int = 256, epochs: int = 100, lr: float = 1e-4, context_length: int = 20):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
+    accelerator = Accelerator()
+    device = accelerator.device
+    accelerator.print(f"Using device: {device}")
 
     # Extract Environment Specs
     temp_dataset = minari.load_dataset(env, download=True)
@@ -39,16 +41,20 @@ def train(env: str = "mujoco/halfcheetah/medium-v0", batch_size: int = 256, epoc
     )
     criterion = nn.MSELoss() # Continuous action matching uses MSE
 
-    print(f"Starting training on {env}...")
+    model, optimizer, dataloader = accelerator.prepare(
+        model, optimizer, dataloader
+    )
+
+    accelerator.print(f"Starting training on {env}...")
     for epoch in range(epochs):
         model.train()
         total_loss = 0
         for batch in dataloader:
-            states = batch['states'].to(device)
-            actions = batch['actions'].to(device)
-            rtg = batch['rtg'].to(device)
-            timesteps = batch['timesteps'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
+            states = batch['states']
+            actions = batch['actions']
+            rtg = batch['rtg']
+            timesteps = batch['timesteps']
+            attention_mask = batch['attention_mask']
 
             optimizer.zero_grad()
             action_preds = model(states, actions, rtg, timesteps, attention_mask)
@@ -62,24 +68,33 @@ def train(env: str = "mujoco/halfcheetah/medium-v0", batch_size: int = 256, epoc
             active_labels = targets[mask_flat == 1]
 
             loss = criterion(active_logits, active_labels)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.25)
+            accelerator.backward(loss)
+            accelerator.clip_grad_norm_(model.parameters(), max_norm=0.25)
             optimizer.step()
 
             total_loss += loss.item()
 
         avg_loss = total_loss / len(dataloader)
-        scheduler.step(avg_loss)
+
+        # Synchronize the loss across all GPUs/cores for the scheduler
+        local_loss_tensor = torch.tensor([avg_loss], dtype=torch.float32, device=accelerator.device)
+        gathered_losses = accelerator.gather(local_loss_tensor)
+        global_avg_loss = torch.mean(gathered_losses).item()
+
+        scheduler.step(global_avg_loss)
         current_lr = optimizer.param_groups[0]['lr']
-        print(f"Epoch {epoch + 1}/{epochs} | Avg MSE Loss: {avg_loss:.4f} | LR: {current_lr:.2e}")
+        accelerator.print(f"Epoch {epoch + 1}/{epochs} | Avg MSE Loss: {global_avg_loss:.4f} | LR: {current_lr:.2e}")
 
     # Save model weights alongside the dataset normalization statistics
-    safe_env_name = env.replace("/", "_")
-    save_path = f"{safe_env_name}_dt.pt"
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'state_mean': dataset.state_mean,
-        'state_std': dataset.state_std
-    }, save_path)
-    print(f"Training complete! Artifacts saved to {save_path}")
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        safe_env_name = env.replace("/", "_")
+        save_path = f"{safe_env_name}_dt.pt"
+        unwrapped_model = accelerator.unwrap_model(model)
+        torch.save({
+            'model_state_dict': unwrapped_model.state_dict(),
+            'state_mean': dataset.state_mean,
+            'state_std': dataset.state_std
+        }, save_path)
+        accelerator.print(f"Training complete! Artifacts saved to {save_path}")
 

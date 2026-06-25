@@ -15,6 +15,8 @@ class MuJoCoDecisionTransformer(nn.Module):
             hidden_size=hidden_size,
             max_ep_len=max_ep_len,
             vocab_size=1, # Unused for continuous actions, but required by HF config
+            bos_token_id=None,
+            eos_token_id=None,
             n_layer=3,
             n_head=1,
             n_inner=4 * hidden_size,

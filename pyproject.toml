@@ -12,8 +12,10 @@ dependencies = [
     "transformers",
     "wandb",
     "pillow",
+    "mujoco==3.2.3",
     "gymnasium[mujoco]",
     "minari[all]",
+    "accelerate",
 ]
 
 [build-system]
