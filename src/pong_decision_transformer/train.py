@@ -6,9 +6,11 @@ import minari
 from pong_decision_transformer.dataset import MinariDataset
 from pong_decision_transformer.model import MuJoCoDecisionTransformer
 from accelerate import Accelerator
+from accelerate.utils import DistributedDataParallelKwargs
 
 def train(env: str = "mujoco/halfcheetah/medium-v0", batch_size: int = 256, epochs: int = 100, lr: float = 1e-4, context_length: int = 20):
-    accelerator = Accelerator()
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    accelerator = Accelerator(kwargs_handlers=[ddp_kwargs])
     accelerator.print(f"Total processes: {accelerator.num_processes}")
     print(f"This process is running on: {accelerator.device}")
 
