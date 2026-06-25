@@ -9,27 +9,27 @@ from accelerate import Accelerator
 
 def train(env: str = "mujoco/halfcheetah/medium-v0", batch_size: int = 256, epochs: int = 100, lr: float = 1e-4, context_length: int = 20):
     accelerator = Accelerator()
-    device = accelerator.device
-    accelerator.print(f"Using device: {device}")
+    accelerator.print(f"Total processes: {accelerator.num_processes}")
+    print(f"This process is running on: {accelerator.device}")
 
-    # Extract Environment Specs
-    temp_dataset = minari.load_dataset(env, download=True)
-    temp_env = temp_dataset.recover_environment()
-    state_dim = temp_env.observation_space.shape[0]
-    act_dim = temp_env.action_space.shape[0]
-    max_ep_len = temp_env.spec.max_episode_steps
-    temp_env.close()
+    # Extract Environment Specs and Load Dataset safely across processes
+    with accelerator.main_process_first():
+        temp_dataset = minari.load_dataset(env, download=True)
+        temp_env = temp_dataset.recover_environment()
+        state_dim = temp_env.observation_space.shape[0]
+        act_dim = temp_env.action_space.shape[0]
+        max_ep_len = temp_env.spec.max_episode_steps
+        temp_env.close()
 
-    # Load Dataset
-    dataset = MinariDataset(env_name=env, context_length=context_length)
+        dataset = MinariDataset(env_name=env, context_length=context_length)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # Initialize Model
+    # Initialize Model (Accelerate handles device placement dynamically)
     model = MuJoCoDecisionTransformer(
         state_dim=state_dim, 
         act_dim=act_dim, 
         max_ep_len=max_ep_len
-    ).to(device)
+    )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
