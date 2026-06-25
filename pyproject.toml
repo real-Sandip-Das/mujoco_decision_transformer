@@ -1,0 +1,21 @@
+[project]
+name = "pong-decision-transformer"
+version = "0.1.0"
+description = "Implementation of Decision Transformer to train a policy for a Mujoco environment."
+readme = "README.md"
+authors = [
+    { name = "Sandip Das", email = "sd13535@outlook.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "torch",
+    "transformers",
+    "wandb",
+    "pillow",
+    "gymnasium[mujoco]",
+    "minari[all]",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
