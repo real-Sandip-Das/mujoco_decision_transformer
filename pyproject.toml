@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "torch",
-    "transformers",
+    "jaxtyping",
     "wandb",
     "pillow",
     "mujoco==3.2.3",

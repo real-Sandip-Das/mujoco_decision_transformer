@@ -8,9 +8,9 @@ from pong_decision_transformer.model import MuJoCoDecisionTransformer
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="mujoco/halfcheetah/medium-v0")
-    parser.add_argument("--model-path", type=str, default="mujoco_halfcheetah_medium-v0_dt.pt")
+    parser.add_argument("--model-path", type=str, default=None, help="Path to model checkpoint (defaults to <env_name>_dt.pt)")
     # Recommended Defaults: HalfCheetah=6000, Hopper=3600, Walker2d=5000
-    parser.add_argument("--target-rtg", type=float, default=6000.0) 
+    parser.add_argument("--target-rtg", type=float, default=None, help="Target return-to-go") 
     parser.add_argument("--context-length", type=int, default=20)
     parser.add_argument("--num-episodes", type=int, default=5)
     parser.add_argument("--render", action="store_true", help="Render the environment UI")
@@ -19,7 +19,28 @@ def parse_args():
 def run_evaluation():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Evaluating {args.env} targeting RTG: {args.target_rtg}")
+
+    # Resolve dynamic defaults based on environment name
+    env_lower = args.env.lower()
+    if args.target_rtg is None:
+        if "halfcheetah" in env_lower:
+            target_rtg = 6000.0
+        elif "walker2d" in env_lower:
+            target_rtg = 5000.0
+        elif "hopper" in env_lower:
+            target_rtg = 3600.0
+        else:
+            target_rtg = 6000.0
+    else:
+        target_rtg = args.target_rtg
+
+    if args.model_path is None:
+        safe_env_name = args.env.replace("/", "_")
+        model_path = f"{safe_env_name}_dt.pt"
+    else:
+        model_path = args.model_path
+
+    print(f"Evaluating {args.env} using model: {model_path} targeting RTG: {target_rtg}")
 
     dataset = minari.load_dataset(args.env, download=True)
     
@@ -39,7 +60,7 @@ def run_evaluation():
     ).to(device)
 
     # Load weights and normalization stats
-    checkpoint = torch.load(args.model_path, map_location=device, weights_only=False)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     state_mean = checkpoint['state_mean']
     state_std = checkpoint['state_std']
@@ -48,11 +69,26 @@ def run_evaluation():
     def normalize_state(obs):
         return (obs - state_mean) / state_std
 
+    # D4RL baseline scores for normalization
+    D4RL_SCORES = {
+        "halfcheetah": {"random": -280.18, "expert": 12135.0},
+        "walker2d": {"random": 1.63, "expert": 4592.3},
+        "hopper": {"random": -20.27, "expert": 3234.3}
+    }
+    
+    env_key = None
+    for k in D4RL_SCORES:
+        if k in args.env.lower():
+            env_key = k
+            break
+
+    episode_rewards = []
+
     for episode in range(args.num_episodes):
         obs, _ = env.reset()
         
         history_states = [normalize_state(obs)]
-        history_rtgs = [args.target_rtg]
+        history_rtgs = [target_rtg]
         history_timesteps = [0]
         # Seed placeholder continuous action vector
         history_actions = [np.zeros(act_dim, dtype=np.float32)] 
@@ -80,11 +116,11 @@ def run_evaluation():
                 rtg_history = np.concatenate([rtg_pad, rtg_history], axis=0)
                 t_history = np.concatenate([t_pad, t_history], axis=0)
 
-            t_states = torch.tensor(s_history, dtype=torch.float32).unsqueeze(0).to(device)
-            t_actions = torch.tensor(a_history, dtype=torch.float32).unsqueeze(0).to(device)
-            t_rtg = torch.tensor(rtg_history, dtype=torch.float32).unsqueeze(0).unsqueeze(-1).to(device)
-            t_timesteps = torch.tensor(t_history, dtype=torch.long).unsqueeze(0).to(device)
-            t_mask = torch.tensor(mask, dtype=torch.long).unsqueeze(0).to(device)
+            t_states = torch.tensor(np.array(s_history), dtype=torch.float32).unsqueeze(0).to(device)
+            t_actions = torch.tensor(np.array(a_history), dtype=torch.float32).unsqueeze(0).to(device)
+            t_rtg = torch.tensor(np.array(rtg_history), dtype=torch.float32).unsqueeze(0).unsqueeze(-1).to(device)
+            t_timesteps = torch.tensor(np.array(t_history), dtype=torch.long).unsqueeze(0).to(device)
+            t_mask = torch.tensor(np.array(mask), dtype=torch.long).unsqueeze(0).to(device)
 
             with torch.no_grad():
                 action_preds = model(t_states, t_actions, t_rtg, t_timesteps, t_mask)
@@ -107,8 +143,21 @@ def run_evaluation():
             history_actions.append(np.zeros(act_dim, dtype=np.float32))
 
         print(f"Episode {episode + 1} | Raw Reward: {episode_reward:.1f}")
+        episode_rewards.append(episode_reward)
 
     env.close()
+
+    avg_reward = np.mean(episode_rewards)
+    print(f"\nEvaluation Complete over {args.num_episodes} episodes.")
+    print(f"Average Raw Reward: {avg_reward:.2f}")
+
+    if env_key is not None:
+        random_score = D4RL_SCORES[env_key]["random"]
+        expert_score = D4RL_SCORES[env_key]["expert"]
+        normalized_score = 100.0 * (avg_reward - random_score) / (expert_score - random_score)
+        print(f"D4RL Normalized Score: {normalized_score:.2f}")
+    else:
+        print("D4RL Normalized Score: N/A (Unknown Environment baseline)")
 
 if __name__ == "__main__":
     run_evaluation()
