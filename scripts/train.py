@@ -1,6 +1,3 @@
-import argparse
-from accelerate import notebook_launcher
-
 # def main():
 #     parser = argparse.ArgumentParser()
 #     parser.add_argument("--env", type=str, default="mujoco/halfcheetah/medium-v0", help="Minari Environment")
@@ -20,7 +17,5 @@ from accelerate import notebook_launcher
 
 # if __name__ == "__main__":
 #     main()
-def wrapper():
-    from pong_decision_transformer.train import train
-    train("mujoco/halfcheetah/medium-v0",1024,10000,1e-2)
-notebook_launcher(wrapper,num_processes=1)
+from pong_decision_transformer.train import train
+train("mujoco/halfcheetah/medium-v0",1024,10000,1e-2)
