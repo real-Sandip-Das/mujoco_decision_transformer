@@ -1,6 +1,6 @@
-# Decision Transformer trained on a Minari dataset for a MuJoCo environment
+# Decision Transformer trained on Hugging Face dataset for a MuJoCo environment
 
-An implementation of the Decision Transformer (DT) architecture (Chen et al., 2021), which is an offline Reinforcement Learning algorithm. The checkpoint is trained on Minari datasets and evaluated on corresponding MuJoCo environments.
+An implementation of the Decision Transformer (DT) architecture (Chen et al., 2021), which is an offline Reinforcement Learning algorithm. The checkpoint is trained on the Hugging Face `edbeeching/decision_transformer_gym_replay` datasets and evaluated on corresponding MuJoCo environments (via Minari).
 
 ## Installing dependencies
 

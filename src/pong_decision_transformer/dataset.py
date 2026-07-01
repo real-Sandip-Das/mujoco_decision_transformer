@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+import datasets
 import minari
 
 def discount_cumsum(x, gamma):
@@ -16,18 +17,26 @@ class MinariDataset(Dataset):
         self.context_length = context_length
         self.env_name = env_name
         
-        print(f"Loading Minari dataset for {env_name}...")
-        dataset = minari.load_dataset(env_name, download=True)
+        # Map minari env name to HF dataset subset
+        # e.g., mujoco/halfcheetah/medium-v0 -> halfcheetah-medium-v2
+        parts = env_name.split("/")
+        if len(parts) == 3 and parts[0] == "mujoco":
+            env_type = parts[1]
+            dataset_version = parts[2].split("-")[0] # e.g., 'medium'
+            hf_subset = f"{env_type}-{dataset_version}-v2"
+        else:
+            hf_subset = "halfcheetah-medium-v2" # fallback
+            
+        print(f"Loading HF dataset edbeeching/decision_transformer_gym_replay for {hf_subset}...")
+        hf_dataset = datasets.load_dataset("edbeeching/decision_transformer_gym_replay", hf_subset, trust_remote_code=True)
         
         # Segment dataset into trajectories based on episodes
         self.trajectories = []
         
-        for episode in dataset:
-            # Extract trajectory slice
-            # minari observations include terminal state, so we take [:-1]
-            traj_obs = episode.observations[:-1]
-            traj_act = episode.actions
-            traj_rew = episode.rewards
+        for episode in hf_dataset['train']:
+            traj_obs = np.array(episode['observations'], dtype=np.float32)
+            traj_act = np.array(episode['actions'], dtype=np.float32)
+            traj_rew = np.array(episode['rewards'], dtype=np.float32)
             
             # Calculate RTG
             traj_rtg = discount_cumsum(traj_rew, gamma=gamma)

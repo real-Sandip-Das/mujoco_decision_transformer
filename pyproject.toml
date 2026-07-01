@@ -16,6 +16,7 @@ dependencies = [
     "gymnasium[mujoco]",
     "minari[all]",
     "accelerate",
+    "datasets==2.19.0",
 ]
 
 [build-system]
